@@ -1,0 +1,36 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, lpad
+
+# Criar sessão Spark integrada com Hadoop
+spark = SparkSession.builder \
+    .appName("Cruzamento UBS e E-saúde") \
+    .config("spark.sql.warehouse.dir", "file:///C:/tmp/spark-warehouse") \
+    .config("spark.hadoop.fs.defaultFS", "hdfs://localhost:9000")\
+    .config("spark.hadoop.yarn.resourcemanager.address", "localhost:8032") \
+    .getOrCreate()
+
+# Caminhos dos arquivos no HDFS
+input_path_ubs = "hdfs://localhost:9000/user/ricardo/cejam.csv"
+input_path_saude = "hdfs://localhost:9000/user/ricardo/esaude.csv"
+
+# Carregar os dados dos arquivos no HDFS
+ubs_df = spark.read.csv(input_path_ubs, header=True, inferSchema=True)
+saude_df = spark.read.csv(input_path_saude, header=True, inferSchema=True)
+
+# Visualizar esquemas
+ubs_df.printSchema()
+saude_df.printSchema()
+
+# Tratamento dos CPFs
+ubs_df = ubs_df.withColumn("ubs_CPF", lpad(col("CPF").cast("string"), 11, "0")).drop("CPF")
+saude_df = saude_df.withColumn("saude_CPF", lpad(col("CPF").cast("string"), 11, "0")).drop("CPF")
+
+# Depara das colunas
+result_df = ubs_df.join(saude_df, ubs_df["ubs_CPF"] == saude_df["saude_CPF"], "inner")
+
+# Salvar o resultado em formato CSV no HDFS
+output_path = "hdfs://localhost:9000/user/ricardo/resultado.csv"
+result_df.coalesce(1).write.csv(output_path, header=True, mode="overwrite")
+
+# Encerrar sessão Spark
+spark.stop()
